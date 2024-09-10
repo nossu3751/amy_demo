@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lamp Simulation</title>
+    <style>
+        #lamp {
+            width: 100px;
+            height: 100px;
+            background-color: yellow;
+            margin: 100px auto;
+            border-radius: 50%;
+            box-shadow: 0 0 10px yellow;
+        }
+        #lamp.off {
+            background-color: black;
+            box-shadow: none;
+        }
+        #status {
+            text-align: center;
+            margin-top: 20px;
+        }
+        #command {
+            text-align: center;
+            margin-top: 10px;
+            font-weight: bold;
+            color: green;
+        }
+    </style>
+</head>
+<body>
+    <div id="lamp"></div>
+    <div id="status">Listening for "Hi Amy"... </div>
+    <div id="command"></div>
+
+    <script>
+        const lamp = document.getElementById('lamp');
+        const status = document.getElementById('status');
+        const commandDisplay = document.getElementById('command');
+
+        let listeningForCommand = false;
+        let inactivityTimeout;
+
+        // Web Speech API - Setting up the SpeechRecognition
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = false;
+        recognition.lang = 'en-US';
+
+        recognition.onstart = () => {
+            status.textContent = "Listening for 'Hi Amy'...";
+            resetInactivityTimeout();
+        };
+
+        recognition.onresult = (event) => {
+            const transcript = event.results[event.results.length - 1][0].transcript.trim().toLowerCase();
+
+            if (!listeningForCommand && transcript.includes('hi amy')) {
+                status.textContent = "Hi Amy detected! Listening for a command...";
+                listeningForCommand = true;
+                resetInactivityTimeout(); // Reset inactivity timer when a command is expected
+            } else if (listeningForCommand) {
+                sendTranscriptToServer(transcript);
+                listeningForCommand = false;
+            }
+        };
+
+        recognition.onend = () => {
+            recognition.start(); // Restart recognition after it ends
+        };
+
+        recognition.start();
+
+        function sendTranscriptToServer(transcript) {
+            clearTimeout(inactivityTimeout); // Clear the timeout when sending transcript
+
+            fetch('http://localhost:5000/process-command', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ transcript }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    commandDisplay.textContent = `Command: ${data.command}`;
+                    handleServerCommand(data.command);
+                } else {
+                    commandDisplay.textContent = `Command not recognized: "${transcript}"`;
+                }
+                resetInactivityTimeout(); // Return to listening for "Hi Amy" after processing the command
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                commandDisplay.textContent = `Error processing command: "${transcript}"`;
+                resetInactivityTimeout();
+            });
+        }
+
+        function handleServerCommand(command) {
+            if (command.includes('flicker')) {
+                const times = parseInt(command.split(' ')[1]) || 1;
+                flickerLamp(times);
+            } else if (command.includes('change color')) {
+                var color = command.split(',')[1];
+                color = color.split(")")[0];
+                changeLampColor(color);
+            }
+            // resetInactivityTimeout()
+        }
+
+        function flickerLamp(times) {
+            const currentBackgroundColor = window.getComputedStyle(lamp).backgroundColor;
+            // Store it in a variable
+            let storedBackgroundColor = currentBackgroundColor;
+            for (let i = 0; i < times; i++) {
+                setTimeout(() => {
+                    // lamp.classList.add('off');
+                    lamp.style.backgroundColor = 'black';
+                    lamp.style.boxShadow = `0 0 10px transparent`;
+                    setTimeout(() => {
+                        // lamp.classList.remove('off');
+                        lamp.style.backgroundColor = storedBackgroundColor;
+                        lamp.style.boxShadow = `0 0 10px ${storedBackgroundColor}`;
+                    }, 250);
+                }, i * 500); // Adjust timing as needed
+            }
+        }
+
+        function changeLampColor(color) {
+            console.log(color)
+            lamp.style.backgroundColor = color;
+            lamp.style.boxShadow = `0 0 10px ${color}`;
+        }
+
+        function resetInactivityTimeout() {
+            clearTimeout(inactivityTimeout);
+            inactivityTimeout = setTimeout(() => {
+                if (listeningForCommand) {
+                    listeningForCommand = false;
+                    status.textContent = "No command detected. Returning to listening for 'Hi Amy'...";
+                }
+            }, 5000); // 5 seconds inactivity timeout
+        }
+    </script>
+</body>
+</html>
